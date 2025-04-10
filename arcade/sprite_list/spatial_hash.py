@@ -1,13 +1,54 @@
+from abc import abstractmethod
 from math import trunc
 from typing import Generic
 
-from arcade.sprite import SpriteType
+from arcade.sprite import SpriteType, SpriteType_co
 from arcade.sprite.base import BasicSprite
 from arcade.types import IPoint, Point
 from arcade.types.rect import Rect
 
 
-class SpatialHash(Generic[SpriteType]):
+class ReadOnlySpatialHash(Generic[SpriteType_co]):
+    """
+    Read-only view of a SpatialHash.
+
+    This is useful when the SpriteType is in covariant position.
+
+    See SpatialHash for more details.
+    """
+
+    @abstractmethod
+    def get_sprites_near_sprite(self, sprite: BasicSprite) -> set[SpriteType_co]:
+        """
+        Get all the sprites that are in the same buckets as the given sprite.
+
+        Args:
+            sprite: The sprite to check
+        """
+        ...
+
+    @abstractmethod
+    def get_sprites_near_point(self, point: Point) -> set[SpriteType_co]:
+        """
+        Return sprites in the same bucket as the given point.
+
+        Args:
+            point: The point to check
+        """
+        ...
+
+    @abstractmethod
+    def get_sprites_near_rect(self, rect: Rect) -> set[SpriteType_co]:
+        """
+        Return sprites in the same buckets as the given rectangle.
+
+        Args:
+            rect: The rectangle to check (left, right, bottom, top)
+        """
+        ...
+
+
+class SpatialHash(ReadOnlySpatialHash[SpriteType]):
     """A data structure best for collision checks with non-moving sprites.
 
     It subdivides space into a grid of squares, each with sides of length
@@ -104,12 +145,6 @@ class SpatialHash(Generic[SpriteType]):
         del self.buckets_for_sprite[sprite]
 
     def get_sprites_near_sprite(self, sprite: BasicSprite) -> set[SpriteType]:
-        """
-        Get all the sprites that are in the same buckets as the given sprite.
-
-        Args:
-            sprite: The sprite to check
-        """
         min_point = trunc(sprite.left), trunc(sprite.bottom)
         max_point = trunc(sprite.right), trunc(sprite.top)
 
@@ -126,23 +161,11 @@ class SpatialHash(Generic[SpriteType]):
         return close_by_sprites
 
     def get_sprites_near_point(self, point: Point) -> set[SpriteType]:
-        """
-        Return sprites in the same bucket as the given point.
-
-        Args:
-            point: The point to check
-        """
         hash_point = self.hash((trunc(point[0]), trunc(point[1])))
         # Return a copy of the set.
         return set(self.contents.setdefault(hash_point, set()))
 
     def get_sprites_near_rect(self, rect: Rect) -> set[SpriteType]:
-        """
-        Return sprites in the same buckets as the given rectangle.
-
-        Args:
-            rect: The rectangle to check (left, right, bottom, top)
-        """
         left, right, bottom, top = rect.lrbt
         min_point = trunc(left), trunc(bottom)
         max_point = trunc(right), trunc(top)
