@@ -1,3 +1,3 @@
-from .tilemap import TileMap, load_tilemap
+from .tilemap import LayerOptions, TileMap, load_tilemap
 
-__all__ = ["TileMap", "load_tilemap"]
+__all__ = ["LayerOptions", "TileMap", "load_tilemap"]

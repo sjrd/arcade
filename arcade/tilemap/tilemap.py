@@ -15,11 +15,12 @@ import os
 from collections import OrderedDict
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, List, cast
+from typing import TYPE_CHECKING, Any, Callable, List, Mapping, TypedDict, cast
 
 import pytiled_parser
 import pytiled_parser.tiled_object
 from pytiled_parser import Color
+from typing_extensions import ReadOnly
 
 import arcade
 from arcade import (
@@ -48,7 +49,7 @@ _FLIPPED_HORIZONTALLY_FLAG = 0x80000000
 _FLIPPED_VERTICALLY_FLAG = 0x40000000
 _FLIPPED_DIAGONALLY_FLAG = 0x20000000
 
-__all__ = ["TileMap", "load_tilemap"]
+__all__ = ["LayerOptions", "TileMap", "load_tilemap"]
 
 prop_to_float = cast(Callable[[pytiled_parser.Property], float], float)
 
@@ -119,6 +120,53 @@ def _may_be_flip(tile: pytiled_parser.Tile, texture: Texture) -> Texture:
     return texture
 
 
+class LayerOptions(TypedDict, total=False):
+    """Extra parameters for a layer."""
+
+    scaling: ReadOnly[float]
+    """Scaling to apply to the sprites of this layer."""
+
+    use_spatial_hash: ReadOnly[bool]
+    """If True, enable spatial hashing on this layer's SpriteList."""
+
+    hit_box_algorithm: ReadOnly[HitBoxAlgorithm | None]
+    """The hit box algorithm to use for the Sprite's in this layer."""
+
+    offset: ReadOnly[Point2]
+    """A tuple containing X and Y position offsets for the layer."""
+
+    custom_class: ReadOnly[type[Sprite] | None]
+    """
+    All objects in the layer are created from this class instead of Sprite.
+
+    Must be subclass of Sprite.
+    """
+
+    custom_class_args: ReadOnly[Mapping[str, Any]]
+    """Custom arguments passed to the constructor of the custom_class."""
+
+    texture_atlas: ReadOnly[TextureAtlasBase | None]
+    """
+    A texture atlas to use for the SpriteList from this layer.
+
+    If none is supplied then the one defined at the map level will be used.
+    """
+
+
+def _merge_layer_options(layer_options: LayerOptions, global_options: LayerOptions) -> LayerOptions:
+    """
+    Merge two LayerOptions dictionaries.
+
+    Take values from layer_options if they exist. Fall back to global_options
+    otherwise.
+    """
+
+    # massive type cheating inside this function
+    go: Any = global_options
+    result: Any = {key: layer_options.get(key, go[key]) for key in go}
+    return result
+
+
 class TileMap:
     """
     Class that represents a fully parsed and loaded map from Tiled.
@@ -155,21 +203,11 @@ class TileMap:
             The texture cache manager to use for loading textures.
 
     The ``layer_options`` parameter can be used to specify per layer arguments.
-    The available options for this are:
-
-    - ``use_spatial_hash`` - A boolean to enable spatial hashing on this layer's SpriteList.
-    - ``scaling`` - A float providing layer specific Sprite scaling.
-    - ``hit_box_algorithm`` - The hit box algorithm to use for the Sprite's in this layer.
-    - ``offset`` - A tuple containing X and Y position offsets for the layer
-    - ``custom_class`` - All objects in the layer are created from this class instead of Sprite. \
-                       Must be subclass of Sprite.
-    - ``custom_class_args`` - Custom arguments, passed into the constructor of the custom_class
-    - ``texture_atlas`` - A texture atlas to use for the SpriteList from this layer, if none is \
-        supplied then the one defined at the map level will be used.
+    See LayerOptions for the available options.
 
         Example configuring layer options for a layer named "Platforms"::
 
-            layer_options = {
+            layer_options: dict[str, arcade.LayerOptions] = {
                 "Platforms": {
                     "use_spatial_hash": True,
                     "scaling": 2.5,
@@ -226,7 +264,7 @@ class TileMap:
         self,
         map_file: str | Path = "",
         scaling: float = 1.0,
-        layer_options: dict[str, dict[str, Any]] | None = None,
+        layer_options: Mapping[str, LayerOptions] | None = None,
         use_spatial_hash: bool = False,
         hit_box_algorithm: HitBoxAlgorithm | None = None,
         tiled_map: pytiled_parser.TiledMap | None = None,
@@ -282,7 +320,7 @@ class TileMap:
         self.object_lists: dict[str, list[TiledObject]] = OrderedDict()
         self.properties = self.tiled_map.properties
 
-        global_options = {  # type: ignore
+        global_options: LayerOptions = {
             "scaling": self.scaling,
             "use_spatial_hash": self.use_spatial_hash,
             "hit_box_algorithm": self.hit_box_algorithm,
@@ -303,8 +341,8 @@ class TileMap:
     def _process_layer(
         self,
         layer: pytiled_parser.Layer,
-        global_options: dict[str, Any],
-        layer_options: dict[str, dict[str, Any]] | None = None,
+        global_options: LayerOptions,
+        layer_options: Mapping[str, LayerOptions] | None = None,
     ) -> None:
         processed: SpriteList | tuple[SpriteList | None, list[TiledObject] | None]
 
@@ -312,11 +350,7 @@ class TileMap:
 
         if layer_options:
             if layer.name in layer_options:
-                new_options = {
-                    key: layer_options[layer.name].get(key, global_options[key])
-                    for key in global_options
-                }
-                options = new_options
+                options = _merge_layer_options(layer_options[layer.name], global_options)
 
         if isinstance(layer, pytiled_parser.TileLayer):
             processed = self._process_tile_layer(layer, **options)
@@ -467,8 +501,8 @@ class TileMap:
         tile: pytiled_parser.Tile,
         scaling: float = 1.0,
         hit_box_algorithm: HitBoxAlgorithm | None = None,
-        custom_class: type | None = None,
-        custom_class_args: dict[str, Any] = {},
+        custom_class: type[Sprite] | None = None,
+        custom_class_args: Mapping[str, Any] = {},
     ) -> Sprite:
         """Given a tile from the parser, try and create a Sprite from it."""
 
@@ -670,13 +704,13 @@ class TileMap:
     def _process_image_layer(
         self,
         layer: pytiled_parser.ImageLayer,
-        texture_atlas: "DefaultTextureAtlas",
+        texture_atlas: TextureAtlasBase | None,
         scaling: float = 1.0,
         use_spatial_hash: bool = False,
         hit_box_algorithm: HitBoxAlgorithm | None = None,
-        offset: Vec2 = Vec2(0, 0),
-        custom_class: type | None = None,
-        custom_class_args: dict[str, Any] = {},
+        offset: Point2 = Vec2(0, 0),
+        custom_class: type[Sprite] | None = None,
+        custom_class_args: Mapping[str, Any] = {},
     ) -> SpriteList:
         sprite_list: SpriteList = SpriteList(
             use_spatial_hash=use_spatial_hash,
@@ -758,13 +792,13 @@ class TileMap:
     def _process_tile_layer(
         self,
         layer: pytiled_parser.TileLayer,
-        texture_atlas: "DefaultTextureAtlas",
+        texture_atlas: TextureAtlasBase | None,
         scaling: float = 1.0,
         use_spatial_hash: bool = False,
         hit_box_algorithm: HitBoxAlgorithm | None = None,
-        offset: Vec2 = Vec2(0, 0),
-        custom_class: type | None = None,
-        custom_class_args: dict[str, Any] = {},
+        offset: Point2 = Vec2(0, 0),
+        custom_class: type[Sprite] | None = None,
+        custom_class_args: Mapping[str, Any] = {},
     ) -> SpriteList:
         sprite_list: SpriteList = SpriteList(
             use_spatial_hash=use_spatial_hash,
@@ -836,13 +870,13 @@ class TileMap:
     def _process_object_layer(
         self,
         layer: pytiled_parser.ObjectLayer,
-        texture_atlas: "DefaultTextureAtlas",
+        texture_atlas: TextureAtlasBase | None,
         scaling: float = 1.0,
         use_spatial_hash: bool = False,
         hit_box_algorithm: HitBoxAlgorithm | None = None,
-        offset: Vec2 = Vec2(0, 0),
-        custom_class: type | None = None,
-        custom_class_args: dict[str, Any] = {},
+        offset: Point2 = Vec2(0, 0),
+        custom_class: type[Sprite] | None = None,
+        custom_class_args: Mapping[str, Any] = {},
     ) -> tuple[SpriteList | None, list[TiledObject] | None]:
         if not scaling:
             scaling = self.scaling
@@ -1028,7 +1062,7 @@ class TileMap:
 def load_tilemap(
     map_file: str | Path,
     scaling: float = 1.0,
-    layer_options: dict[str, dict[str, Any]] | None = None,
+    layer_options: Mapping[str, LayerOptions] | None = None,
     use_spatial_hash: bool = False,
     hit_box_algorithm: HitBoxAlgorithm | None = None,
     offset: Vec2 = Vec2(0, 0),

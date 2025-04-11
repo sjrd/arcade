@@ -82,7 +82,7 @@ class GameView(arcade.View):
         # Layer specific options are defined based on Layer names in a dictionary
         # Doing this will make the SpriteList for the platforms layer
         # use spatial hashing for collision detection.
-        layer_options = {
+        layer_options: dict[str, arcade.LayerOptions] = {
             "Platforms": {
                 "use_spatial_hash": True,
             },

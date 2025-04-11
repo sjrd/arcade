@@ -196,6 +196,7 @@ from .physics_engines import PhysicsEnginePlatformer
 from .physics_engines import PhysicsEngineSimple
 
 from .tilemap import load_tilemap
+from .tilemap import LayerOptions
 from .tilemap import TileMap
 
 from .pymunk_physics_engine import PymunkPhysicsEngine
@@ -296,6 +297,7 @@ __all__ = [
     "TextureCacheManager",
     "SpriteSheet",
     "DefaultTextureAtlas",
+    "LayerOptions",
     "TileMap",
     "VERSION",
     "Vec2",
